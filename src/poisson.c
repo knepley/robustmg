@@ -2,18 +2,46 @@ static char help[] = "Poisson Problem in 2d and 3d with finite elements.\n\
 We solve the Poisson problem in a rectangular\n\
 domain, using a parallel unstructured mesh (DMPLEX) to discretize it.\n\
 This example supports automatic convergence estimation\n\
-and eventually adaptivity.\n\n\n";
+and coarse space adaptivity.\n\n\n";
 
 #include <petscdmplex.h>
 #include <petscsnes.h>
 #include <petscds.h>
 #include <petscconvest.h>
 
+/*
+  TODO
+  - Add in coefficient
+    - Add example with poor convegence (coefficient jump?)
+  - Run scalable GMG test
+    - Generate weak scaling plot
+    - Generate static scaling plot
+    - Generate efficacy scaling plot
+  - Run scalable AMG test
+    - Generate weak scaling plot
+    - Generate static scaling plot
+    - Generate efficacy scaling plot
+  - Write monitor for GMG error
+    - Use FFT to look at modes during smoothing
+    - Use SLEPc to look at generalized modes during restriction
+  - Look at test examples with CR
+  - Use CR output to refine coarse mesh
+*/
+
+typedef enum {COEFF_CONSTANT, COEFF_STEP, COEFF_CHECKERBOARD, NUM_COEFF} CoeffType;
+const char *CoeffTypes[NUM_COEFF+2] = {"constant", "step", "checkerboard", "unknown", NULL};
+
 typedef struct {
   /* Domain and mesh definition */
   PetscBool spectral; /* Look at the spectrum along planes in the solution */
   PetscBool shear;    /* Shear the domain */
   PetscBool adjoint;  /* Solve the adjoint problem */
+  /* Problem definition */
+  CoeffType ctype;    /* Type of coefficient behavior */
+  /* Reproducing tests from SISC 40(3), pp. A1473-A1493, 2018 */
+  PetscInt  div;      /* Number of divisions */
+  PetscInt  k;        /* Parameter for checkerboard coefficient */
+  PetscInt *kgrid;    /* Random parameter grid */
 } AppCtx;
 
 static PetscErrorCode zero(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *u, void *ctx)
@@ -28,6 +56,44 @@ static PetscErrorCode trig_u(PetscInt dim, PetscReal time, const PetscReal x[], 
   *u = 0.0;
   for (d = 0; d < dim; ++d) *u += PetscSinReal(2.0*PETSC_PI*x[d]);
   return 0;
+}
+
+static PetscErrorCode kappa_constant(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *kappa, void *ctx)
+{
+  AppCtx  *user = (AppCtx *) ctx;
+  PetscInt k    = user->k;
+
+  *kappa = PetscPowRealInt(10.0, -k);
+  return 0;
+}
+
+static PetscErrorCode kappa_step(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *kappa, void *ctx)
+{
+  AppCtx  *user = (AppCtx *) ctx;
+  PetscInt k    = user->k;
+
+  *kappa = x[0] > 0.5 ? PetscPowRealInt(10.0, -k) : 1.0;
+  return 0;
+}
+
+static PetscErrorCode kappa_checkerboard(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *kappa, void *ctx)
+{
+  AppCtx  *user = (AppCtx *) ctx;
+  PetscInt div  = user->div;
+  PetscInt k    = user->k;
+  PetscInt mask = 0, ind = 0, d;
+
+  PetscFunctionBeginUser;
+  for (d = 0; d < dim; ++d) mask = (mask + (PetscInt) (x[d]*div)) % 2;
+  if (user->kgrid) {
+    for (d = 0; d < dim; ++d) {
+      if (d > 0) ind *= dim;
+      ind += (PetscInt) (x[d]*div);
+    }
+    k = user->kgrid[ind];
+  }
+  *kappa = mask ? 1.0 : PetscPowRealInt(10.0, -k);
+  PetscFunctionReturn(0);
 }
 
 /* Compute integral of (residual of solution)*(adjoint solution - projection of adjoint solution) */
@@ -70,7 +136,7 @@ static void f1_u(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                  PetscReal t, const PetscReal x[], PetscInt numConstants, const PetscScalar constants[], PetscScalar f1[])
 {
   PetscInt d;
-  for (d = 0; d < dim; ++d) f1[d] = u_x[d];
+  for (d = 0; d < dim; ++d) f1[d] = a[0]*u_x[d];
 }
 
 static void g3_uu(PetscInt dim, PetscInt Nf, PetscInt NfAux,
@@ -82,20 +148,53 @@ static void g3_uu(PetscInt dim, PetscInt Nf, PetscInt NfAux,
   for (d = 0; d < dim; ++d) g3[d*dim+d] = 1.0;
 }
 
-static PetscErrorCode ProcessOptions(MPI_Comm comm, AppCtx *options)
+static PetscErrorCode ProcessOptions(DM dm, AppCtx *options)
 {
+  MPI_Comm       comm;
+  PetscBool      rand = PETSC_FALSE;
+  PetscInt       dim, coeff;
   PetscErrorCode ierr;
 
   PetscFunctionBeginUser;
+  ierr = PetscObjectGetComm((PetscObject) dm, &comm);CHKERRQ(ierr);
+  ierr = DMGetDimension(dm, &dim);CHKERRQ(ierr);
   options->shear    = PETSC_FALSE;
   options->spectral = PETSC_FALSE;
   options->adjoint  = PETSC_FALSE;
+  options->ctype    = COEFF_CONSTANT;
+  options->div      = 4;
+  options->k        = 0;
+  options->kgrid    = NULL;
 
   ierr = PetscOptionsBegin(comm, "", "Poisson Problem Options", "DMPLEX");CHKERRQ(ierr);
-  ierr = PetscOptionsBool("-shear", "Shear the domain", "ex13.c", options->shear, &options->shear, NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsBool("-spectral", "Look at the spectrum along planes of the solution", "ex13.c", options->spectral, &options->spectral, NULL);CHKERRQ(ierr);
-  ierr = PetscOptionsBool("-adjoint", "Solve the adjoint problem", "ex13.c", options->adjoint, &options->adjoint, NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-shear", "Shear the domain", "poisson.c", options->shear, &options->shear, NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-spectral", "Look at the spectrum along planes of the solution", "poisson.c", options->spectral, &options->spectral, NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-adjoint", "Solve the adjoint problem", "poisson.c", options->adjoint, &options->adjoint, NULL);CHKERRQ(ierr);
+  coeff = options->ctype;
+  ierr = PetscOptionsEList("-coeff_type","Type of variable coefficent","poisson.c",CoeffTypes,NUM_COEFF,CoeffTypes[options->ctype],&coeff,NULL);CHKERRQ(ierr);
+  options->ctype = (CoeffType) coeff;
+  ierr = PetscOptionsInt("-div", "The number of division for the checkerboard coefficient", "poisson.c", options->div, &options->div, NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsInt("-k", "The exponent for the checkerboard coefficient", "poisson.c", options->k, &options->k, NULL);CHKERRQ(ierr);
+  ierr = PetscOptionsBool("-k_random", "Assign random k values to checkerboard", "poisson.c", rand, &rand, NULL);CHKERRQ(ierr);
   ierr = PetscOptionsEnd();
+
+  if (rand) {
+    PetscRandom r;
+    PetscReal   low = options->k >= 0.0 ? 1.0 : options->k-1.0, high = options->k >= 0.0 ? options->k+1.0 : -1.0, val;
+    PetscInt    N = PetscPowInt(options->div, dim), i;
+
+    ierr = PetscMalloc1(N, &options->kgrid);CHKERRQ(ierr);
+    ierr = PetscRandomCreate(PETSC_COMM_SELF, &r);CHKERRQ(ierr);
+    ierr = PetscRandomSetFromOptions(r);CHKERRQ(ierr);
+    ierr = PetscRandomSetInterval(r, low, high);CHKERRQ(ierr);
+    ierr = PetscRandomSetSeed(r, 1973);CHKERRQ(ierr);
+    ierr = PetscRandomSeed(r);CHKERRQ(ierr);
+    for (i = 0; i < N; ++i) {
+      ierr = PetscRandomGetValueReal(r, &val);CHKERRQ(ierr);
+      options->kgrid[i] = (PetscInt) val;
+    }
+    ierr = PetscRandomDestroy(&r);CHKERRQ(ierr);
+  }
   PetscFunctionReturn(0);
 }
 
@@ -177,16 +276,23 @@ static PetscErrorCode CreateMesh(MPI_Comm comm, AppCtx *user, DM *dm)
 
 static PetscErrorCode SetupPrimalProblem(DM dm, AppCtx *user)
 {
-  PetscDS        prob;
+  PetscDS        ds;
   const PetscInt id = 1;
   PetscErrorCode ierr;
 
   PetscFunctionBeginUser;
-  ierr = DMGetDS(dm, &prob);CHKERRQ(ierr);
-  ierr = PetscDSSetResidual(prob, 0, f0_trig_u, f1_u);CHKERRQ(ierr);
-  ierr = PetscDSSetJacobian(prob, 0, 0, NULL, NULL, NULL, g3_uu);CHKERRQ(ierr);
-  ierr = PetscDSSetExactSolution(prob, 0, trig_u, user);CHKERRQ(ierr);
+  ierr = DMGetDS(dm, &ds);CHKERRQ(ierr);
+  ierr = PetscDSSetResidual(ds, 0, f0_trig_u, f1_u);CHKERRQ(ierr);
+  ierr = PetscDSSetJacobian(ds, 0, 0, NULL, NULL, NULL, g3_uu);CHKERRQ(ierr);
+  ierr = PetscDSSetExactSolution(ds, 0, trig_u, user);CHKERRQ(ierr);
   ierr = DMAddBoundary(dm, DM_BC_ESSENTIAL, "wall", "marker", 0, 0, NULL, (void (*)(void)) trig_u, NULL, 1, &id, user);CHKERRQ(ierr);
+  {
+    PetscScalar constants[2];
+
+    constants[0] = user->div;
+    constants[1] = user->k;
+    ierr = PetscDSSetConstants(ds, 2, constants);CHKERRQ(ierr);
+  }
   PetscFunctionReturn(0);
 }
 
@@ -215,10 +321,52 @@ static PetscErrorCode SetupErrorProblem(DM dm, AppCtx *user)
   PetscFunctionReturn(0);
 }
 
+static PetscErrorCode SetupMaterial(DM dm, DM dmAux, AppCtx *user)
+{
+  PetscErrorCode (*funcs[1])(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar u[], void *ctx);
+  void            *ctx[1];
+  Vec              kappa;
+  PetscErrorCode   ierr;
+
+  PetscFunctionBegin;
+  ctx[0] = user;
+  switch (user->ctype) {
+    case COEFF_CONSTANT:     funcs[0] = kappa_constant;break;
+    case COEFF_STEP:         funcs[0] = kappa_step;break;
+    case COEFF_CHECKERBOARD: funcs[0] = kappa_checkerboard;break;
+    default: SETERRQ1(PetscObjectComm((PetscObject) dm), PETSC_ERR_ARG_OUTOFRANGE, "Invalid coefficient type %d", user->ctype);
+  }
+  ierr = DMCreateLocalVector(dmAux, &kappa);CHKERRQ(ierr);
+  ierr = PetscObjectSetName((PetscObject) kappa, "kappa");CHKERRQ(ierr);
+  ierr = DMProjectFunctionLocal(dmAux, 0.0, funcs, ctx, INSERT_ALL_VALUES, kappa);CHKERRQ(ierr);
+  ierr = VecViewFromOptions(kappa, NULL, "-kappa_view");CHKERRQ(ierr);
+  ierr = PetscObjectCompose((PetscObject) dm, "A", (PetscObject) kappa);CHKERRQ(ierr);
+  ierr = VecDestroy(&kappa);CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
+static PetscErrorCode SetupAuxDM(DM dm, PetscFE feAux, AppCtx *user)
+{
+  DM             dmAux, coordDM;
+  PetscErrorCode ierr;
+
+  PetscFunctionBegin;
+  /* MUST call DMGetCoordinateDM() in order to get p4est setup if present */
+  ierr = DMGetCoordinateDM(dm, &coordDM);CHKERRQ(ierr);
+  ierr = DMClone(dm, &dmAux);CHKERRQ(ierr);
+  ierr = PetscObjectCompose((PetscObject) dm, "dmAux", (PetscObject) dmAux);CHKERRQ(ierr);
+  ierr = DMSetCoordinateDM(dmAux, coordDM);CHKERRQ(ierr);
+  ierr = DMSetField(dmAux, 0, NULL, (PetscObject) feAux);CHKERRQ(ierr);
+  ierr = DMCreateDS(dmAux);CHKERRQ(ierr);
+  ierr = SetupMaterial(dm, dmAux, user);CHKERRQ(ierr);
+  ierr = DMDestroy(&dmAux);CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
 static PetscErrorCode SetupDiscretization(DM dm, const char name[], PetscErrorCode (*setup)(DM, AppCtx *), AppCtx *user)
 {
   DM             cdm = dm;
-  PetscFE        fe;
+  PetscFE        fe, feAux;
   DMPolytopeType ct;
   PetscBool      simplex;
   PetscInt       dim, cStart;
@@ -234,16 +382,22 @@ static PetscErrorCode SetupDiscretization(DM dm, const char name[], PetscErrorCo
   ierr = PetscSNPrintf(prefix, PETSC_MAX_PATH_LEN, "%s_", name);CHKERRQ(ierr);
   ierr = PetscFECreateDefault(PETSC_COMM_SELF, dim, 1, simplex, name ? prefix : NULL, -1, &fe);CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) fe, name);CHKERRQ(ierr);
+  /* Create coefficient finite element */
+  ierr = PetscFECreateDefault(PETSC_COMM_SELF, dim, 1, simplex, "kappa_", -1, &feAux);CHKERRQ(ierr);
+  ierr = PetscObjectSetName((PetscObject) feAux, "kappa");CHKERRQ(ierr);
+  ierr = PetscFECopyQuadrature(fe, feAux);CHKERRQ(ierr);
   /* Set discretization and boundary conditions for each mesh */
   ierr = DMSetField(dm, 0, NULL, (PetscObject) fe);CHKERRQ(ierr);
   ierr = DMCreateDS(dm);CHKERRQ(ierr);
   ierr = (*setup)(dm, user);CHKERRQ(ierr);
   while (cdm) {
+    ierr = SetupAuxDM(cdm, feAux, user);CHKERRQ(ierr);
     ierr = DMCopyDisc(dm,cdm);CHKERRQ(ierr);
     /* TODO: Check whether the boundary of coarse meshes is marked */
     ierr = DMGetCoarseDM(cdm, &cdm);CHKERRQ(ierr);
   }
   ierr = PetscFEDestroy(&fe);CHKERRQ(ierr);
+  ierr = PetscFEDestroy(&feAux);CHKERRQ(ierr);
   PetscFunctionReturn(0);
 }
 
@@ -364,10 +518,10 @@ int main(int argc, char **argv)
   PetscErrorCode ierr;
 
   ierr = PetscInitialize(&argc, &argv, NULL, help);if (ierr) return ierr;
-  ierr = ProcessOptions(PETSC_COMM_WORLD, &user);CHKERRQ(ierr);
   /* Primal system */
   ierr = SNESCreate(PETSC_COMM_WORLD, &snes);CHKERRQ(ierr);
   ierr = CreateMesh(PETSC_COMM_WORLD, &user, &dm);CHKERRQ(ierr);
+  ierr = ProcessOptions(dm, &user);CHKERRQ(ierr);
   ierr = SNESSetDM(snes, dm);CHKERRQ(ierr);
   ierr = SetupDiscretization(dm, "potential", SetupPrimalProblem, &user);CHKERRQ(ierr);
   ierr = DMCreateGlobalVector(dm, &u);CHKERRQ(ierr);
@@ -496,6 +650,7 @@ int main(int argc, char **argv)
   ierr = VecDestroy(&u);CHKERRQ(ierr);
   ierr = SNESDestroy(&snes);CHKERRQ(ierr);
   ierr = DMDestroy(&dm);CHKERRQ(ierr);
+  ierr = PetscFree(user.kgrid);CHKERRQ(ierr);
   ierr = PetscFinalize();
   return ierr;
 }
@@ -587,12 +742,13 @@ int main(int argc, char **argv)
         -mg_levels_ksp_chebyshev_esteig 0,0.05,0,1.05 \
         -mg_levels_pc_type jacobi \
       -matptap_via scalable
+  # Problem of size 1046529, 7317521 nonzeros, V(2, 2)
   test:
     suffix: 2d_p1_gmg_vcycle
     requires: triangle
-    args: -potential_petscspace_degree 1 -dm_plex_box_faces 2,2 -dm_refine_hierarchy 3 \
-          -ksp_rtol 5e-10 -pc_type mg \
-            -mg_levels_ksp_max_it 1 \
+    args: -potential_petscspace_degree 1 -dm_plex_box_faces 16,16 -dm_refine_hierarchy 6 \
+          -ksp_rtol 1e-10 -pc_type mg \
+            -mg_levels_ksp_max_it 2 \
             -mg_levels_esteig_ksp_type cg \
             -mg_levels_esteig_ksp_max_it 10 \
             -mg_levels_ksp_chebyshev_esteig 0,0.05,0,1.05 \
