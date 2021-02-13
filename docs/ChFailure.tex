@@ -1,0 +1,21 @@
+\begin{refsection}
+\chapter{How Can Multigrid Fail?}
+
+If the coarse space cannot capture modes not handled by the smoother, then those error components will not be reduced and the convergence will stall. Thus, we would like to have a way to monitor the quality of the coarse space. To do this, we run the process in reverse. Suppose that I had the exact solution in the coarse space. I would prolong this into the original fine space and then run the smoother. If the error is reduced quickly, without disturbing the coarse solution, then the smoother is working well. In short, if we smooth in the complement of the coarse space, we should see good convergence. This kind of smoothing is called \defineTerm{compatible relaxation}~\parencite{Brandt2000,BrannickFalgout2007}, and one cycle can be written
+\begin{align}
+  \vb{v}_{k+1} = \left( I - S (S^T M S)^{-1} S^T A \right) \vb{v}_k.
+\end{align}
+Since $R S = 0$, we can write the whole thing as
+\begin{align}
+  \vb{v}_{k+1} = \left( I - M_S^{-1} A_S \right) \vb{v}_k.
+\end{align}
+where $A_S = S^T A S$ and likewise for $M$, as shown in~\parencite{BrannickEtAl2018}.
+
+\section{MiniProjects}
+
+Create monitor to show CR error
+
+Create monitor to show difference between projected error with and without coarse adaptation
+
+\printbibliography[heading=subbibliography] % print section bibliography
+\end{refsection}

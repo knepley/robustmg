@@ -1,0 +1,23 @@
+\chapter{What is Multigrid?}
+
+Multigrid is an iterative method for the solution of systems of linear and nonlinear equations. In this treatment, we will think of the system of equations as arising from the discretization of a partial differential equation (PDE), but this need not be the case.
+
+Multigrid is made up of three simple pieces:
+\begin{enumerate}
+  \item a local solver on the fine grid, called a \use{smoother},
+
+  \item a coarse grid solver, and
+
+  \item a mapping between functions on coarse and fine grids.
+\end{enumerate}
+The idea is that the smoother handles details in the solution on the fine grid. It is inexpensive because it is local, meaning it only considers a few variables at a time. Then the coarse solve handles parts of the solution spanning the whole domain, but using a much smaller problem than the original. In fact, notice that we can use multigrid as the coarse solver, creating a tower of solvers on decreasing grids. As a first step, we will just imagine that the mapping is a simple average, or perhaps linear interpolation, from one grid to another.
+
+Our simple conception of multigrid relies on two complementary assumptions:
+\begin{enumerate}
+  \item Simple averages are good predictors of field values
+
+  \item Equations hold between the average values which are similar to the original equations
+\end{enumerate}
+The first assumption follows from the mean value theorem for electrostatics, namely that the potential at any point is equal to the average over some ball surrounding that point which contains no charges. We expect some weighted average to work for general elliptic equations since the \defineTerm{maximum principle} tells us that increases in some directions are compensated by decreases in others. The second assumption is the heart of renormalization, and depends on the particular equations.
+
+In order to see why multigrid is important, it is instructive to look at the alternatives. A direct factorization, such as Gaussian elimination (LU), will have cost in $\mathcal{O}(N^3)$ for $N$ variables. Using a Krylov method, such as Conjugate Gradients (CG), should take about $\sqrt{\kappa} = h^{-1} = N^{1/d}$ steps, with each step linear in $N$, so that the total cost is in $\mathcal{O}(N^{(d+1)/d})$. Assuming that each application of the smoother takes time linear in the size of that grid, the total time will also be in $\mathcal{O}(N)$. For large $N$, this advantage can be substantial.

@@ -1,0 +1,31 @@
+\begin{refsection}
+\chapter{How Does Multigrid Succeed?}\label{ch:success}
+
+Our multigrid will function properly if, at each level, the error component not eliminated by the smoother are eliminated by the coarse solver. Thus, we could start by dividing the space into coarse modes, supported on the coarse mesh, and the remaining fine modes, and then design solvers to handle these two components. However, a design methodology for the solvers is not clear to us. Instead, we will first select a smoother, and then adapt the coarse space to catch error components not handled by the fine solve. The smoother will certainly be local, but can be selected for other properties, such as preservation of a null space~\parencite{FarrellMitchellWechsung2018,FarrellKnepleyWechsungMitchell2020}.
+
+In~\parencite{BrannickEtAl2018}, the authors characterize the optimal coarse grid space, which is the $n$ eigenvectors of lowest eigenvalue for the generalized eigenproblem
+\begin{align}
+  A \vb{x} = \lambda \tilde M \vb{x}
+\end{align}
+where $\tilde M$ is the symmetrized smoothing operator, but we will drop the tilde from now on. The idea is that iterative smoothers capture best the modes for large eigenvalues of $M^{-1} A$, and thus we should design our coarse space $\mathcal{P}$ to support the lowest modes of this operator. The space handled well by the smoother is called $\mathcal{S}$, and is the $M$-orthogonal complement of the coarse space $\mathcal{P}$. The important point to keep in mind here is that the optimal coarse space \textit{depends on} the smoother, so it does not make much sense to evaluate them independently.
+
+\section{MiniProjects}
+
+Use FFT to calculate the projection onto the eigenbasis for the Laplacian
+\begin{itemize}
+  \item Project the error to show smoother decreasing coefficients of high frequencies
+  \item Project error onto coarse space to show that it captures modes with appreciable coefficients
+  \item Project corrected solution to show that mostly high modes are left
+\end{itemize}
+
+Use SLEPc to calculate the generalized eigenmodes
+\begin{itemize}
+  \item Project the error to show smoother decreasing coefficients of high frequencies
+  \item Project error onto coarse space to show that it captures modes with appreciable coefficients
+  \item Project corrected solution to show that mostly high modes are left
+\end{itemize}
+
+Create monitor to display projected error
+
+\printbibliography[heading=subbibliography] % print section bibliography
+\end{refsection}

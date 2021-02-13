@@ -1,0 +1,63 @@
+\documentclass[]{book}
+
+\input{preamble.tex}
+\solvedfalse
+
+\begin{document}
+
+\begin{titlepage}
+    \begin{center}
+        \vspace*{1cm}
+
+        \Huge
+        \textbf{Robust Multigrid}
+
+        \vspace{2cm}
+
+        \LARGE
+        Optimal Solvers in PETSc
+
+        \vspace{3.5cm}
+
+        \Huge
+        \textbf{Matthew G. Knepley}
+
+        \vfill
+
+        \vspace{0.8cm}
+
+        \includegraphics[width=0.4\textwidth]{logos/UB_Primary}
+
+        \Large
+        Department of Computer Science and Engineering\\
+        University At Buffalo\\
+        \today
+
+    \end{center}
+\end{titlepage}
+
+\thispagestyle{empty}
+\null\vspace{\stretch {1}}
+\begin{flushright}
+  I dedicate these notes to my wonderful wife Margarete, without whose patience and help they could never have been written.
+\end{flushright}
+\vspace{\stretch{2}}\null
+
+\begin{acknowledgements}
+TBD
+\end{acknowledgements}
+
+
+\tableofcontents
+
+\include{ChIntroduction}
+\include{ChPoisson}
+\include{ChSuccess}
+\include{ChFailure}
+\include{ChAdaptation}
+
+\cleardoublepage
+\addcontentsline{toc}{chapter}{Index}
+\printindex
+
+\end{document}
