@@ -12,7 +12,9 @@ and coarse space adaptivity.\n\n\n";
 /*
   TODO
   - Add in coefficient
-    - Add example with poor convegence (coefficient jump?)
+    - Add anisotropic coefficient
+  - Add monitors
+    - Error in Generalized Eigenbasis and LG
   - Run scalable GMG test
     - Generate weak scaling plot
     - Generate static scaling plot
@@ -747,17 +749,18 @@ int main(int argc, char **argv)
     suffix: 2d_p1_gmg_vcycle
     requires: triangle
     args: -potential_petscspace_degree 1 -dm_plex_box_faces 16,16 -dm_refine_hierarchy 6 \
-          -ksp_rtol 1e-10 -pc_type mg \
+          -ksp_type cg -ksp_rtol 1e-10 -pc_type mg -pc_mg_adapt_cr \
             -mg_levels_ksp_max_it 2 \
             -mg_levels_esteig_ksp_type cg \
             -mg_levels_esteig_ksp_max_it 10 \
             -mg_levels_ksp_chebyshev_esteig 0,0.05,0,1.05 \
-            -mg_levels_pc_type jacobi
+            -mg_levels_pc_type jacobi \
+            -mg_levels_cr_ksp_max_it 5 -mg_levels_cr_ksp_converged_rate -mg_levels_cr_ksp_converged_rate_type error
   test:
     suffix: 2d_p1_gmg_fcycle
     requires: triangle
     args: -potential_petscspace_degree 1 -dm_plex_box_faces 2,2 -dm_refine_hierarchy 3 \
-          -ksp_rtol 5e-10 -pc_type mg -pc_mg_type full \
+          -ksp_type cg -ksp_rtol 5e-10 -pc_type mg -pc_mg_type full \
             -mg_levels_ksp_max_it 2 \
             -mg_levels_esteig_ksp_type cg \
             -mg_levels_esteig_ksp_max_it 10 \
