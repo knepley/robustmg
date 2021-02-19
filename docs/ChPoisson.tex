@@ -126,7 +126,7 @@ We will begin our scaling runs with GMG, but also include AMG eventually. Our fi
  \bashinline{-dm_plex_box_faces 16,16}                   & Original grid is 16x16 \\
  \bashinline{-ksp\_type cg}                              & Use Conjugate Gradients \\
  \bashinline{-ksp\_rtol 1.0e-10}                         & Krylov tolerance \\
- \bashinline{-da\_refine\_hierarchy 6}                   & 6 levels of refinement \\
+ \bashinline{-dm\_refine\_hierarchy 6}                   & 6 levels of refinement \\
  \bashinline{-pc\_type mg}                               & 6 levels of multigrid \\
  \bashinline{-mg\_levels\_ksp_max_it 2}                  & V(2,2) cycle \\
  \bashinline{-mg\_levels\_esteig\_ksp\_type cg}          & Use CG for eigen-estimation \\
@@ -137,3 +137,71 @@ We will begin our scaling runs with GMG, but also include AMG eventually. Our fi
 \end{tabular}
 \end{center}
 I notice that my Apple also likes \bashinline{-malloc_debug 0}. Looking at the output of \bashinline{-log\_view}, the total time to solve this system of 1M unknowns on my Macbook is a about 40s, but onyl about 27s is used by the solver itself. Most of the other time is used in the mesh hierarchy setup, such as preallocating the operator and constructing the maps between meshes.
+
+\section{Convergence}
+
+Suppose that we start with the scalable solver above, and wish to look at the convergence of the solver. We will start with a smaller problem of size 16129, where the size is controlled by the number of refinements, using bashinline{-da\_refine\_hierarchy 3}. If we use \bashinline{-ksp_monitor}, we can print the residual norm at each iterate. Here an iterate means one V-cycle, and we are using V(2, 2) meaning two Chebhyshev/Jacobi iterations for each smoother application.
+\begin{bash}
+0 KSP Residual norm 1.246687667754e+02
+1 KSP Residual norm 1.173183807978e+00
+2 KSP Residual norm 2.148547148913e-01
+3 KSP Residual norm 4.363569022569e-02
+4 KSP Residual norm 5.269255735305e-03
+5 KSP Residual norm 9.652538049515e-04
+6 KSP Residual norm 1.407786924015e-04
+7 KSP Residual norm 1.857771028731e-05
+8 KSP Residual norm 3.107505106987e-06
+9 KSP Residual norm 5.461746383081e-07
+10 KSP Residual norm 9.885122430428e-08
+11 KSP Residual norm 1.740238017074e-08
+12 KSP Residual norm 2.779256440973e-09
+\end{bash}
+We can instead plot the residual decrease as a line graph using \bashinline{-ksp_monitor draw::draw_lg}, as shown on the left in Fig.~\ref{fig:residualPlots}. Using just \bashinline{-ksp_monitor draw}, we can plot the residual itself over the domain, as shown on the right in the figure.
+
+\begin{figure}
+\centering
+\includegraphics[width=2in]{figures/residualLG.png}\hfil
+\includegraphics[width=2in]{figures/residualLast.png}
+\caption{Plot of residual norm for each iterate of our multigrid solve on the left, and the residual itself for the last iterate on the right\label{fig:residualPlots}}
+\end{figure}
+
+The same sequence can be repeated for the error, since we are using MMS and can produce the exact solution. Using \bashinline{-ksp_monitor_error}, we produce the error norm for each iterate.
+\begin{bash}
+0 KSP Error norm 9.947802867762e-01
+1 KSP Error norm 1.000114579455e-02
+2 KSP Error norm 1.628832514084e-03
+3 KSP Error norm 5.600031707378e-04
+4 KSP Error norm 1.947734270258e-04
+5 KSP Error norm 2.221932067247e-04
+6 KSP Error norm 2.171843316734e-04
+7 KSP Error norm 2.176959633670e-04
+8 KSP Error norm 2.176494135621e-04
+9 KSP Error norm 2.176509954453e-04
+10 KSP Error norm 2.176519724470e-04
+11 KSP Error norm 2.176516886193e-04
+12 KSP Error norm 2.176517676049e-04
+\end{bash}
+Notice that the error stagnates well before we achieve convergence in the residual. This is because we hit the discretization error for our mesh. Refining the mesh will lower this bound, as we can see by running with \bashinline{-dm_refine_hierarchy 6},
+\begin{bash}
+0 KSP Error norm 9.993487701143e-01
+1 KSP Error norm 1.232700481821e-02
+2 KSP Error norm 2.400433256734e-03
+3 KSP Error norm 4.230977361349e-04
+4 KSP Error norm 6.442041832235e-05
+5 KSP Error norm 1.421221753837e-05
+6 KSP Error norm 2.668522964351e-06
+7 KSP Error norm 3.579243209530e-06
+8 KSP Error norm 3.382570470325e-06
+9 KSP Error norm 3.409974576211e-06
+10 KSP Error norm 3.408023096618e-06
+11 KSP Error norm 3.407773635368e-06
+12 KSP Error norm 3.407899220660e-06
+\end{bash}
+As before we can also run using \bashinline{-ksp_monitor_error draw::draw_lg} to generate a line graph of the above sequence, and \bashinline{-ksp_monitor_error draw} to plot the error over the domain, which are shown in Fig.~\ref{fig:errorPlots}. Notice that the error follows the structure of the solution, whereas the residual is much more oscillatory and seems not to be connected to the solution structure.
+
+\begin{figure}
+\centering
+\includegraphics[width=2in]{figures/errorLG.png}\hfil
+\includegraphics[width=2in]{figures/errorLast.png}
+\caption{Plot of error norm for each iterate of our multigrid solve on the left, and the error itself for the last iterate on the right\label{fig:errorPlots}}
+\end{figure}
