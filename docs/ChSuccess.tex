@@ -1,7 +1,41 @@
 \begin{refsection}
 \chapter{How Does Multigrid Succeed?}\label{ch:success}
 
+\section{Single-level Solves}
+
+If we run a purely local solver, such as SOR, we see that the error (and residual) initially decrease quickly as we accurately solve local problems.
+\begin{bash}
+  ./poisson -potential_petscspace_degree 1 -dm_plex_box_faces 16,16 -dm_refine_hierarchy 3 \
+    -ksp_type richardson -ksp_rtol 1e-10 -pc_type sor -ksp_type richardson -ksp_max_it 500 \
+    -ksp_monitor_error draw::draw_lg -ksp_monitor_pause_final
+\end{bash}
+However, we need increasingly distant data to make more progress, and the solver is only able to increase its reach by about one adjacent dof per iteration. Thus, we see a rapid slowdown and stagnation of the solve in Fig.~\ref{fig:errorSOR}. Note also that the error has distinct large scale features. These are the low frequency modes that are difficult to eliminate with a purely local solver.
+
+\begin{figure}
+\centering
+\includegraphics[width=2in]{figures/errorSORLG.png}\hfil
+\includegraphics[width=2in]{figures/errorSORLast.png}
+\caption{Plot of error norm for each iterate of an SOR solve on the left, and the error itself for the last iterate on the right\label{fig:errorSOR}}
+\end{figure}
+
+If we augment SOR with a Krylov solver, we can see that for smaller problems this is enough to converge, as in the left side of Fig.~\ref{fig:errorCGSOR}.
+\begin{bash}
+  ./poisson -potential_petscspace_degree 1 -dm_plex_box_faces 16,16 -dm_refine_hierarchy 3 \
+    -ksp_type cg -ksp_rtol 1e-10 -pc_type sor -ksp_type richardson -ksp_max_it 500 \
+    -ksp_monitor_error draw::draw_lg -ksp_monitor_pause_final
+\end{bash}
+but if we just increase the problem size a little with \bashinline{-dm_refine_hierarchy 6} then the stagnation returns. Asymptotically, Krylov solvers with local preconditioners make no progress at all on this problem.
+
+\begin{figure}
+\centering
+\includegraphics[width=2in]{figures/errorCGSORLG_r3.png}\hfil
+\includegraphics[width=2in]{figures/errorCGSORLG_r6.png}
+\caption{Plot of error norm for each iterate of an CG/SOR solve, with 3 refinements on the left and 6 refinements on the right.\label{fig:errorCGSOR}}
+\end{figure}
+
 Explain linear convergence and how to calculate the rate.
+
+\section{Multilevel Solves}
 
 Our multigrid will function properly if, at each level, the error component not eliminated by the smoother are eliminated by the coarse solver. Thus, we could start by dividing the space into coarse modes, supported on the coarse mesh, and the remaining fine modes, and then design solvers to handle these two components. However, a design methodology for the solvers is not clear to us. Instead, we will first select a smoother, and then adapt the coarse space to catch error components not handled by the fine solve. The smoother will certainly be local, but can be selected for other properties, such as preservation of a null space~\parencite{FarrellMitchellWechsung2018,FarrellKnepleyWechsungMitchell2020}.
 
