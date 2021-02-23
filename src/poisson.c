@@ -30,8 +30,8 @@ and coarse space adaptivity.\n\n\n";
   - Use CR output to refine coarse mesh
 */
 
-typedef enum {COEFF_CONSTANT, COEFF_STEP, COEFF_CHECKERBOARD, NUM_COEFF} CoeffType;
-const char *CoeffTypes[NUM_COEFF+2] = {"constant", "step", "checkerboard", "unknown", NULL};
+typedef enum {COEFF_CONSTANT, COEFF_STEP, COEFF_CHECKERBOARD, COEFF_ANISOTROPIC, NUM_COEFF} CoeffType;
+const char *CoeffTypes[NUM_COEFF+2] = {"constant", "step", "checkerboard", "anisotropic", "unknown", NULL};
 
 typedef struct {
   /* Domain and mesh definition */
@@ -52,6 +52,21 @@ static PetscErrorCode zero(PetscInt dim, PetscReal time, const PetscReal x[], Pe
   return 0;
 }
 
+/* MMS
+   u = sin(2\pi x) + sin(2\pi y)
+
+   Case 1: constant \kappa
+
+   f = \kappa \Delta u
+     = \kappa (-4\pi^2 sin(2\pi x) - 4\pi^2 sin(2\pi y))
+
+   Case 2: anisotropic constant \kappa
+
+   f = div \kappa grad u
+     = div <\kappa_x u_x, \kappa_y u_y>
+     = \kappa_x u_{xx} + \kappa_y u_{yy}
+     = -4\pi^2 sin(2\pi x) \kappa_x - 4\pi^2 sin(2\pi y)) \kappa_y
+*/
 static PetscErrorCode trig_u(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *u, void *ctx)
 {
   PetscInt d;
@@ -98,6 +113,16 @@ static PetscErrorCode kappa_checkerboard(PetscInt dim, PetscReal time, const Pet
   PetscFunctionReturn(0);
 }
 
+static PetscErrorCode kappa_anisotropic(PetscInt dim, PetscReal time, const PetscReal x[], PetscInt Nc, PetscScalar *kappa, void *ctx)
+{
+  AppCtx  *user = (AppCtx *) ctx;
+  PetscInt k    = user->k;
+
+  kappa[0] = 1.0;
+  kappa[1] = PetscPowRealInt(10.0, -k);
+  return 0;
+}
+
 /* Compute integral of (residual of solution)*(adjoint solution - projection of adjoint solution) */
 static void obj_error_u(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                         const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[],
@@ -113,7 +138,16 @@ static void f0_trig_u(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                       PetscReal t, const PetscReal x[], PetscInt numConstants, const PetscScalar constants[], PetscScalar f0[])
 {
   PetscInt d;
-  for (d = 0; d < dim; ++d) f0[0] += -4.0*PetscSqr(PETSC_PI)*PetscSinReal(2.0*PETSC_PI*x[d]);
+  for (d = 0; d < dim; ++d) f0[0] += -4.0*PetscSqr(PETSC_PI)*PetscSinReal(2.0*PETSC_PI*x[d])*a[0];
+}
+
+static void f0_trig_aniso_u(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+                            const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[],
+                            const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[],
+                            PetscReal t, const PetscReal x[], PetscInt numConstants, const PetscScalar constants[], PetscScalar f0[])
+{
+  PetscInt d;
+  for (d = 0; d < dim; ++d) f0[0] += -4.0*PetscSqr(PETSC_PI)*PetscSinReal(2.0*PETSC_PI*x[d])*a[d];
 }
 
 static void f0_unity_u(PetscInt dim, PetscInt Nf, PetscInt NfAux,
@@ -147,7 +181,25 @@ static void g3_uu(PetscInt dim, PetscInt Nf, PetscInt NfAux,
                   PetscReal t, PetscReal u_tShift, const PetscReal x[], PetscInt numConstants, const PetscScalar constants[], PetscScalar g3[])
 {
   PetscInt d;
-  for (d = 0; d < dim; ++d) g3[d*dim+d] = 1.0;
+  for (d = 0; d < dim; ++d) g3[d*dim+d] = a[0];
+}
+
+static void f1_aniso_u(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+                       const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[],
+                       const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[],
+                       PetscReal t, const PetscReal x[], PetscInt numConstants, const PetscScalar constants[], PetscScalar f1[])
+{
+  PetscInt d;
+  for (d = 0; d < dim; ++d) f1[d] = a[d]*u_x[d];
+}
+
+static void g3_aniso_uu(PetscInt dim, PetscInt Nf, PetscInt NfAux,
+                        const PetscInt uOff[], const PetscInt uOff_x[], const PetscScalar u[], const PetscScalar u_t[], const PetscScalar u_x[],
+                        const PetscInt aOff[], const PetscInt aOff_x[], const PetscScalar a[], const PetscScalar a_t[], const PetscScalar a_x[],
+                        PetscReal t, PetscReal u_tShift, const PetscReal x[], PetscInt numConstants, const PetscScalar constants[], PetscScalar g3[])
+{
+  PetscInt d;
+  for (d = 0; d < dim; ++d) g3[d*dim+d] = a[d];
 }
 
 static PetscErrorCode ProcessOptions(DM dm, AppCtx *options)
@@ -284,8 +336,16 @@ static PetscErrorCode SetupPrimalProblem(DM dm, AppCtx *user)
 
   PetscFunctionBeginUser;
   ierr = DMGetDS(dm, &ds);CHKERRQ(ierr);
-  ierr = PetscDSSetResidual(ds, 0, f0_trig_u, f1_u);CHKERRQ(ierr);
-  ierr = PetscDSSetJacobian(ds, 0, 0, NULL, NULL, NULL, g3_uu);CHKERRQ(ierr);
+  switch (user->ctype) {
+    case COEFF_ANISOTROPIC:
+      ierr = PetscDSSetResidual(ds, 0, f0_trig_aniso_u, f1_aniso_u);CHKERRQ(ierr);
+      ierr = PetscDSSetJacobian(ds, 0, 0, NULL, NULL, NULL, g3_aniso_uu);CHKERRQ(ierr);
+      break;
+    default:
+      ierr = PetscDSSetResidual(ds, 0, f0_trig_u, f1_u);CHKERRQ(ierr);
+      ierr = PetscDSSetJacobian(ds, 0, 0, NULL, NULL, NULL, g3_uu);CHKERRQ(ierr);
+      break;
+  }
   ierr = PetscDSSetExactSolution(ds, 0, trig_u, user);CHKERRQ(ierr);
   ierr = DMAddBoundary(dm, DM_BC_ESSENTIAL, "wall", "marker", 0, 0, NULL, (void (*)(void)) trig_u, NULL, 1, &id, user);CHKERRQ(ierr);
   {
@@ -336,6 +396,7 @@ static PetscErrorCode SetupMaterial(DM dm, DM dmAux, AppCtx *user)
     case COEFF_CONSTANT:     funcs[0] = kappa_constant;break;
     case COEFF_STEP:         funcs[0] = kappa_step;break;
     case COEFF_CHECKERBOARD: funcs[0] = kappa_checkerboard;break;
+    case COEFF_ANISOTROPIC:  funcs[0] = kappa_anisotropic;break;
     default: SETERRQ1(PetscObjectComm((PetscObject) dm), PETSC_ERR_ARG_OUTOFRANGE, "Invalid coefficient type %d", user->ctype);
   }
   ierr = DMCreateLocalVector(dmAux, &kappa);CHKERRQ(ierr);
@@ -365,6 +426,20 @@ static PetscErrorCode SetupAuxDM(DM dm, PetscFE feAux, AppCtx *user)
   PetscFunctionReturn(0);
 }
 
+static PetscErrorCode RefineHook(DM cdm, DM fdm, void *ctx)
+{
+  DM             dmAux;
+  PetscFE        feAux;
+  PetscErrorCode ierr;
+
+  PetscFunctionBeginUser;
+  ierr = PetscObjectQuery((PetscObject) cdm, "dmAux", (PetscObject *) &dmAux);CHKERRQ(ierr);
+  ierr = DMGetField(dmAux, 0, NULL, (PetscObject *) &feAux);CHKERRQ(ierr);
+  ierr = SetupAuxDM(fdm, feAux, ctx);CHKERRQ(ierr);
+  ierr = DMRefineHookAdd(fdm, RefineHook, NULL, ctx);CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
 static PetscErrorCode SetupDiscretization(DM dm, const char name[], PetscErrorCode (*setup)(DM, AppCtx *), AppCtx *user)
 {
   DM             cdm = dm;
@@ -385,7 +460,10 @@ static PetscErrorCode SetupDiscretization(DM dm, const char name[], PetscErrorCo
   ierr = PetscFECreateDefault(PETSC_COMM_SELF, dim, 1, simplex, name ? prefix : NULL, -1, &fe);CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) fe, name);CHKERRQ(ierr);
   /* Create coefficient finite element */
-  ierr = PetscFECreateDefault(PETSC_COMM_SELF, dim, 1, simplex, "kappa_", -1, &feAux);CHKERRQ(ierr);
+  switch (user->ctype) {
+    case COEFF_ANISOTROPIC: ierr = PetscFECreateDefault(PETSC_COMM_SELF, dim, dim, simplex, "kappa_", -1, &feAux);CHKERRQ(ierr);break;
+    default:                ierr = PetscFECreateDefault(PETSC_COMM_SELF, dim, 1,   simplex, "kappa_", -1, &feAux);CHKERRQ(ierr);break;
+  }
   ierr = PetscObjectSetName((PetscObject) feAux, "kappa");CHKERRQ(ierr);
   ierr = PetscFECopyQuadrature(fe, feAux);CHKERRQ(ierr);
   /* Set discretization and boundary conditions for each mesh */
@@ -400,6 +478,8 @@ static PetscErrorCode SetupDiscretization(DM dm, const char name[], PetscErrorCo
   }
   ierr = PetscFEDestroy(&fe);CHKERRQ(ierr);
   ierr = PetscFEDestroy(&feAux);CHKERRQ(ierr);
+
+  ierr = DMRefineHookAdd(dm, RefineHook, NULL, user);CHKERRQ(ierr);
   PetscFunctionReturn(0);
 }
 
@@ -531,6 +611,7 @@ int main(int argc, char **argv)
   ierr = PetscObjectSetName((PetscObject) u, "potential");CHKERRQ(ierr);
   ierr = DMPlexSetSNESLocalFEM(dm, &user, &user, &user);CHKERRQ(ierr);
   ierr = SNESSetFromOptions(snes);CHKERRQ(ierr);
+  ierr = DMSNESCheckFromOptions(snes, u);CHKERRQ(ierr);
   ierr = SNESSolve(snes, NULL, u);CHKERRQ(ierr);
   ierr = SNESGetSolution(snes, &u);CHKERRQ(ierr);
   ierr = VecViewFromOptions(u, NULL, "-potential_view");CHKERRQ(ierr);
@@ -660,10 +741,24 @@ int main(int argc, char **argv)
 /*TEST
 
   test:
-    # Using -dm_refine 2 -convest_num_refine 3 we get L_2 convergence rate: 1.9
+    # L_2 convergence rate: 1.9
     suffix: 2d_p1_conv
     requires: triangle
-    args: -potential_petscspace_degree 1 -snes_convergence_estimate -convest_num_refine 2
+    args: -potential_petscspace_degree 1 -k {{-2, 0, 2}} -snes_convergence_estimate -dm_refine 2 -convest_num_refine 3
+  test:
+    # L_2 convergence rate: 1.9
+    suffix: 2d_q1_conv
+    args: -dm_plex_box_simplex 0 -potential_petscspace_degree 1 -k {{-2, 0, 2}} -snes_convergence_estimate -dm_refine 2 -convest_num_refine 3
+  test:
+    # L_2 convergence rate:
+    suffix: 2d_p1_aniso_conv
+    requires: triangle
+    args: -potential_petscspace_degree 1 -k {{-2, 0, 2}} -coeff_type anisotropic -snes_convergence_estimate -dm_refine 2 -convest_num_refine 3
+  test:
+    # L_2 convergence rate:
+    suffix: 2d_q1_aniso_conv
+    args: -dm_plex_box_simplex 0 -potential_petscspace_degree 1 -k {{-2, 0, 2}} -coeff_type anisotropic -snes_convergence_estimate -dm_refine 2 -convest_num_refine 3
+
   test:
     # Using -dm_refine 2 -convest_num_refine 3 we get L_2 convergence rate: 2.9
     suffix: 2d_p2_conv
@@ -674,10 +769,6 @@ int main(int argc, char **argv)
     suffix: 2d_p3_conv
     requires: triangle
     args: -potential_petscspace_degree 3 -snes_convergence_estimate -convest_num_refine 2
-  test:
-    # Using -dm_refine 2 -convest_num_refine 3 we get L_2 convergence rate: 1.9
-    suffix: 2d_q1_conv
-    args: -dm_plex_box_simplex 0 -potential_petscspace_degree 1 -snes_convergence_estimate -convest_num_refine 2
   test:
     # Using -dm_refine 2 -convest_num_refine 3 we get L_2 convergence rate: 2.9
     suffix: 2d_q2_conv
