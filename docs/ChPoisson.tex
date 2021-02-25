@@ -73,6 +73,21 @@ $\left(\lfloor m x \rfloor + \lfloor m y \rfloor\right) \bmod 2 + 10^{-k} \left(
 \end{tabular}
 \end{center}
 
+We can also introduce a tensor coefficient
+\begin{align}
+  -\nabla \cdot \boldsymbol\kappa \cdot \nabla u = f.
+\end{align}
+For our problem, we will restrict the tensor coefficient to diagonal tensors. Thus in 2D we have
+\begin{align}
+  -\mqty(\partial_x & \partial_y) \cdot \mqty(\alpha & 0\\ 0 & \beta) \cdot \mqty(\partial_x \\ \partial_y) u &= f \\
+  -\mqty(\partial_x & \partial_y) \cdot \mqty(\alpha\partial_x \\ \beta\partial_y) u &= f \\
+  -\left(\alpha\partial^2_x + \beta\partial^2_y\right) u &= f
+\end{align}
+and our weak form becomes
+\begin{align}
+  \left(\nabla v, \boldsymbol\kappa \cdot \nabla u\right) = \int \nabla v \cdot \mqty(\alpha\partial_x u_0 \\ \beta\partial_y u_1)
+\end{align}
+
 \section{Unstructured Grid}
 
 We can solve a 2D Poisson problem on a unstructured grid using finite elements in the \bashinline{poisson.c} code in our project. By default, we use \cinline{DMPlexCreateBoxMesh()}, which makes a small structured mesh of a box using either simplicies or tensor product cells. The user can set the cell type, domain dimensions, periodicity, and number of divisions from the command line. After the mesh is created, it can be regularly refined $n$ times using \bashinline{-dm_refine n}. The polynomial degree $k$ for approximation of the potential is set using \bashinline{-potential_petscspace_degree k}.

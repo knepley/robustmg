@@ -11,6 +11,58 @@ Since $R S = 0$, we can write the whole thing as
 \end{align}
 where $A_S = S^T A S$ and likewise for $M$, as shown in~\parencite{BrannickEtAl2018}.
 
+\section{Anisotropic Coefficient}
+
+We will start solving this problem with our standard GMG solver,
+\begin{bash}
+./poisson -coeff_type anisotropic -k -1
+  -potential_petscspace_degree 1 -dm_plex_box_faces 16,16 -dm_refine_hierarchy 6
+  -ksp_type cg -ksp_rtol 1e-10
+  -pc_type mg -mg_levels_ksp_max_it 2 -mg_levels_pc_type jacobi
+    -mg_levels_esteig_ksp_type cg -mg_levels_esteig_ksp_max_it 10 -mg_levels_ksp_chebyshev_esteig 0,0.05,0,1.05
+  -ksp_monitor_error draw::draw_lg -ksp_monitor_pause_final
+\end{bash}
+If the difference in the values for $x$ and $y$ is only one order of magnitude, then our convergence is basically unchanged
+\begin{bash}
+0 SNES Function norm 3.215985340573e+02   Rate
+  0 KSP Residual norm 9.862882847633e+02
+  1 KSP Residual norm 1.067418792425e+02  0.11
+  2 KSP Residual norm 1.170787252211e+01  0.11
+  3 KSP Residual norm 3.220190329561e+00  0.28
+  4 KSP Residual norm 3.697605469473e-01  0.11
+  5 KSP Residual norm 9.800443978108e-02  0.26
+  6 KSP Residual norm 2.048479959211e-02  0.21
+  7 KSP Residual norm 3.552256547716e-03  0.17
+  8 KSP Residual norm 7.635109560268e-04  0.21
+  9 KSP Residual norm 1.621948714165e-04  0.21
+ 10 KSP Residual norm 2.320226509599e-05  0.14
+ 11 KSP Residual norm 4.346694615058e-06  0.19
+ 12 KSP Residual norm 9.341461114587e-07  0.10
+ 13 KSP Residual norm 1.230311675666e-07  0.13
+ 14 KSP Residual norm 2.252822538750e-08  0.18
+1 SNES Function norm 2.072530386954e-08
+\end{bash}
+However, if we increase $k$, the number of iterations increases drastically until we hit $k = 4$, after which it stays roughly constant, as can bee seen in Fig.~\ref{fig:errorAnisoK}. We can also see that multigrid is losing its scalability, in that as I increase the mesh size, the number of iterates to hit discretization error increases, as shown in Fig.~\ref{fig:errorAnisoN}. So what is going wrong?
+
+\begin{figure}
+\centering
+\includegraphics[width=2in]{figures/errorAnisoK1_r6.png}\hfil
+\includegraphics[width=2in]{figures/errorAnisoK2_r6.png}\\
+\includegraphics[width=2in]{figures/errorAnisoK3_r6.png}\hfil
+\includegraphics[width=2in]{figures/errorAnisoK4_r6.png}
+\caption{Plot of error and residual norms for each iterate of our multigrid solve for $k$ = -1, -2, -3, and -4.\label{fig:errorAnisoK}}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics[width=1.5in]{figures/errorAnisoK4_r2.png}\hfil
+\includegraphics[width=1.5in]{figures/errorAnisoK4_r4.png}\hfil
+\includegraphics[width=1.5in]{figures/errorAnisoK4_r6.png}
+\caption{Plot of error and residual norms for each iterate of our multigrid solve with $k$ = -4 for 2, 4, and 6 refinements of the initial mesh.\label{fig:errorAnisoN}}
+\end{figure}
+
+We can first try to see if our smoother has become less effective.
+
 \section{MiniProjects}
 
 Create monitor to show CR error
