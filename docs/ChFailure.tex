@@ -42,7 +42,19 @@ If the difference in the values for $x$ and $y$ is only one order of magnitude, 
  14 KSP Residual norm 2.252822538750e-08  0.18
 1 SNES Function norm 2.072530386954e-08
 \end{bash}
-However, if we increase $k$, the number of iterations increases drastically until we hit $k = 4$, after which it stays roughly constant, as can bee seen in Fig.~\ref{fig:errorAnisoK}. We can also see that multigrid is losing its scalability, in that as I increase the mesh size, the number of iterates to hit discretization error increases, as shown in Fig.~\ref{fig:errorAnisoN}. So what is going wrong?
+However, if we increase $k$, the number of iterations increases drastically until we hit $k = 4$, after which it stays roughly constant, as can bee seen in Fig.~\ref{fig:errorAnisoK}. We can also see that multigrid is losing its scalability, in that as I increase the mesh size the contraction rate is falling
+\begin{bash}
+  ./poisson -dm_refine_hierarchy 2 -k -4 -coeff_type anisotropic ...
+    -ksp_converged_rate -ksp_converged_rate_type residual
+  Linear solve converged due to CONVERGED_RTOL iterations 72 res rate 0.767723 R^2 0.976486
+  ./poisson -dm_refine_hierarchy 4 -k -4 -coeff_type anisotropic ...
+    -ksp_converged_rate -ksp_converged_rate_type residual
+  Linear solve converged due to CONVERGED_RTOL iterations 203 res rate 0.914207 R^2 0.973331
+  ./poisson -dm_refine_hierarchy 6 -k -4 -coeff_type anisotropic ...
+    -ksp_converged_rate -ksp_converged_rate_type residual
+  Linear solve converged due to CONVERGED_RTOL iterations 298 res rate 0.940867 R^2 0.993658
+\end{bash}
+and the number of iterates to hit discretization error increases, as shown in Fig.~\ref{fig:errorAnisoN}. So what is going wrong?
 
 \begin{figure}
 \centering
@@ -61,7 +73,74 @@ However, if we increase $k$, the number of iterations increases drastically unti
 \caption{Plot of error and residual norms for each iterate of our multigrid solve with $k$ = -4 for 2, 4, and 6 refinements of the initial mesh.\label{fig:errorAnisoN}}
 \end{figure}
 
-We can first try to see if our smoother has become less effective.
+We can first try to see if our smoother has become less effective using the rate monitor on our first level.
+\begin{bash}
+  ./poisson -dm_refine_hierarchy 2 -k -4 -coeff_type anisotropic ...
+    -mg_levels_1_ksp_converged_rate -mg_levels_1_ksp_converged_rate_type residual
+    -mg_levels_1_ksp_norm_type preconditioned
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.721296 R^2 0.992187
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.680885 R^2 0.98317
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.616259 R^2 0.974962
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.732815 R^2 0.992424
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.764227 R^2 0.996241
+      ...
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.870409 R^2 0.979988
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.812481 R^2 0.999999
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.816343 R^2 0.993959
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.807783 R^2 0.999019
+      Linear mg_levels_1_ solve converged due to CONVERGED_ITS iterations 2 res rate 0.834384 R^2 0.998993
+\end{bash}
+It starts out fine, and gets slightly worse, so we might suspect that it is not the smoother itself which is to blame, but rather the combination of the smoother and coarse space. We can test this using our CR monitor.
+\begin{bash}
+  ./poisson -dm_refine_hierarchy 2 -k -4 -coeff_type anisotropic ...
+    -pc_mg_adapt_cr -mg_levels_cr_ksp_max_it 5 -mg_levels_cr_ksp_converged_rate
+    -mg_levels_cr_ksp_converged_rate_type error
+      Linear mg_levels_1_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.753441 R^2 0.950102
+    Linear mg_levels_2_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.762209 R^2 0.925055
+    ...
+  ./poisson -dm_refine_hierarchy 4 -k -4 -coeff_type anisotropic ...
+    -pc_mg_adapt_cr -mg_levels_cr_ksp_max_it 5 -mg_levels_cr_ksp_converged_rate
+    -mg_levels_cr_ksp_converged_rate_type error
+          Linear mg_levels_1_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.753441 R^2 0.950102
+        Linear mg_levels_2_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.762209 R^2 0.925055
+      Linear mg_levels_3_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.762132 R^2 0.914645
+    Linear mg_levels_4_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.766149 R^2 0.916249
+  ./poisson -dm_refine_hierarchy 6 -k -4 -coeff_type anisotropic ...
+    -pc_mg_adapt_cr -mg_levels_cr_ksp_max_it 5 -mg_levels_cr_ksp_converged_rate
+    -mg_levels_cr_ksp_converged_rate_type error
+              Linear mg_levels_1_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.753441 R^2 0.950102
+            Linear mg_levels_2_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.762209 R^2 0.925055
+          Linear mg_levels_3_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.762132 R^2 0.914645
+        Linear mg_levels_4_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.766149 R^2 0.916249
+      Linear mg_levels_5_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.768881 R^2 0.914111
+    Linear mg_levels_6_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.767963 R^2 0.913506
+\end{bash}
+whereas for a fully functioning multigrid we get
+\begin{bash}
+  ./poisson -dm_refine_hierarchy 2 -k 0 -coeff_type anisotropic ...
+    -pc_mg_adapt_cr -mg_levels_cr_ksp_max_it 5 -mg_levels_cr_ksp_converged_rate
+    -mg_levels_cr_ksp_converged_rate_type error
+      Linear mg_levels_1_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.671787 R^2 0.960782
+    Linear mg_levels_2_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.642287 R^2 0.976622
+    ...
+  ./poisson -dm_refine_hierarchy 4 -k 0 -coeff_type anisotropic ...
+    -pc_mg_adapt_cr -mg_levels_cr_ksp_max_it 5 -mg_levels_cr_ksp_converged_rate
+    -mg_levels_cr_ksp_converged_rate_type error
+          Linear mg_levels_1_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.671787 R^2 0.960782
+        Linear mg_levels_2_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.642287 R^2 0.976622
+      Linear mg_levels_3_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.642214 R^2 0.973073
+    Linear mg_levels_4_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.646824 R^2 0.974903
+  ./poisson -dm_refine_hierarchy 6 -k 0 -coeff_type anisotropic ...
+    -pc_mg_adapt_cr -mg_levels_cr_ksp_max_it 5 -mg_levels_cr_ksp_converged_rate
+    -mg_levels_cr_ksp_converged_rate_type error
+              Linear mg_levels_1_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.671787 R^2 0.960782
+            Linear mg_levels_2_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.642287 R^2 0.976622
+          Linear mg_levels_3_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.642214 R^2 0.973073
+        Linear mg_levels_4_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.646824 R^2 0.974903
+      Linear mg_levels_5_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.645552 R^2 0.975915
+    Linear mg_levels_6_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.645276 R^2 0.976259
+\end{bash}
+Thus, it looks like the recommendation by Brannick and Falgout to choose 0.7 as the cutoff for acceptable CR convergence is a good one.
 
 \section{MiniProjects}
 
