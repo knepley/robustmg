@@ -155,7 +155,7 @@ I notice that my Apple also likes \bashinline{-malloc_debug 0}. Looking at the o
 
 \section{Convergence}
 
-Suppose that we start with the scalable solver above, and wish to look at the convergence of the solver. We will start with a smaller problem of size 16129, where the size is controlled by the number of refinements, using bashinline{-da\_refine\_hierarchy 3}. If we use \bashinline{-ksp_monitor}, we can print the residual norm at each iterate. Here an iterate means one V-cycle, and we are using V(2, 2) meaning two Chebhyshev/Jacobi iterations for each smoother application.
+Suppose that we start with the scalable solver above, and wish to look at the convergence of the solver. We will start with a smaller problem of size 16129, where the size is controlled by the number of refinements, using \bashinline{-dm\_refine\_hierarchy 3}. If we use \bashinline{-ksp_monitor}, we can print the residual norm at each iterate. Here an iterate means one V-cycle, and we are using V(2, 2) meaning two Chebhyshev/Jacobi iterations for each smoother application.
 \begin{bash}
 0 KSP Residual norm 1.246687667754e+02
 1 KSP Residual norm 1.173183807978e+00

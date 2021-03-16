@@ -140,7 +140,31 @@ whereas for a fully functioning multigrid we get
       Linear mg_levels_5_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.645552 R^2 0.975915
     Linear mg_levels_6_cr_ solve converged due to CONVERGED_ITS iterations 5 error rate 0.645276 R^2 0.976259
 \end{bash}
-Thus, it looks like the recommendation by Brannick and Falgout to choose 0.7 as the cutoff for acceptable CR convergence is a good one.
+Thus, it looks like the recommendation by Brannick and Falgout to choose 0.7 as the cutoff for acceptable CR convergence is a good one. We can also take a look at the CR error itself,
+\begin{bash}
+  ./poisson -dm_refine_hierarchy 6 -k -4 -coeff_type anisotropic ...
+    -pc_mg_adapt_cr -mg_levels_cr_ksp_max_it 5 -mg_levels_2_cr_ksp_monitor_solution draw
+\end{bash}
+which is shown in Fig~\ref{fig:errorCRAnisoK}. We can see the long vertical streaks of slowly converging dofs for $k = -4$, and the same horizontal streaks for $k = 4$. In the $k = -4$ case, the coefficient for the $y$ direction is must larger than for $x$, so that diffusion is easier vertically, or connections in the $x$ direction are weak, making it look like a bunch of disconnected 1D problems in the $y$ direction. Therefore, we would coarsen in the $y$ direction, but not in $x$, creating strongly linked chains of dofs in $x$ in the coarse grid. This is called \defineTerm{semi-coarsening} in the multigrid literature. We want CR to highlight the slowly converging dofs in the fine grid.
+
+% https://amath.colorado.edu/pub/past_talks/mgtut09.pdf, p.57 has good discussion of anisotropic
+% https://www.ima.umn.edu/materials/2010-2011/W11.29-12.3.10/10309/ima-2010-cr-v3.pdf Good slides by Rob
+
+\begin{figure}
+\centering
+\includegraphics[width=2in]{figures/errorCRAnisoKm4_r6.png}\hfil
+\includegraphics[width=2in]{figures/errorCRAnisoK4_r6.png}
+\caption{Plot of error for the level 2 (above the coarse grid) using compatible relaxation (CR) solve after five iterates for $k$ = -4 and 4.\label{fig:errorCRAnisoK}}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics[width=1.5in]{figures/errorCRAnisoKm4_r6.png}\hfil
+\includegraphics[width=1.5in]{figures/errorCRAnisoKm4_L3_r6.png}\hfil
+\includegraphics[width=1.5in]{figures/errorCRAnisoKm4_L4_r6.png}
+\caption{Plot of error for the levels 2, 3 and 4 using compatible relaxation (CR) solve after five iterates for $k$ = -4.\label{fig:errorCRAnisoL}}
+\end{figure}
+
 
 \section{MiniProjects}
 

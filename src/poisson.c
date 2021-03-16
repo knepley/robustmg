@@ -11,6 +11,12 @@ and coarse space adaptivity.\n\n\n";
 
 /*
   TODO
+  - CR
+    - Change initial guess for CR to 1
+    - Threshold CR error
+    - Plot CR error
+    - Mark dofs for inclusion
+    - Plot new coarse grid
   - Add in coefficient
     - Add anisotropic coefficient
   - Add monitors
